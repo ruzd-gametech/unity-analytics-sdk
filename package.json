@@ -1,0 +1,33 @@
+{
+    "name": "com.ruzd.analytics",
+    "version": "1.0.1",
+    "displayName": "ruzd analytics SDK",
+    "description": "ruzd analytics SDK for Unity",
+    "unity": "2020.1",
+    "license": "MIT",
+    "category": "Analytics",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/ruzd-gametech/unity-analytics-sdk"
+    },
+    "dependencies": {
+        "com.unity.nuget.newtonsoft-json": "3.0.2"
+    },
+    "keywords": [
+        "data",
+        "analytics",
+        "events",
+        "reporting",
+        "dashboard",
+        "tracking",
+        "unity",
+        "realtime",
+        "player",
+        "steam"
+    ],
+    "author": {
+        "name": "Ruzd",
+        "email": "office@ruzd.com",
+        "url": "https://ruzd.com"
+    }
+}
