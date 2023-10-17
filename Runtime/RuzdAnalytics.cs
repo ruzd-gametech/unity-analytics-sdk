@@ -1,4 +1,3 @@
-using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using SnowplowTracker;
@@ -8,11 +7,6 @@ using SnowplowTracker.Enums;
 using SnowplowTracker.Payloads.Contexts;
 using SnowplowTracker.Payloads;
 using SnowplowTracker.Storage;
-using UnityEditor.Experimental.GraphView;
-using UnityEngine.UIElements;
-using Newtonsoft.Json.Linq;
-using System.Reflection.Emit;
-using System;
 
 namespace RuzdAnalytics
 {
@@ -29,7 +23,7 @@ namespace RuzdAnalytics
         private bool trackingRunning = false;
         private bool trackingSetup = false;
         private long lastFPSEvent;
-        private int FPS_MIN_INTERVAL_SECONDS = 120;
+        private int FPS_MIN_INTERVAL_SECONDS = 10;
         private HttpMethod httpMethod = HttpMethod.POST;
         private readonly string POST_SUFFIX = "/com.snowplowanalytics.snowplow/tp2";
         private readonly string GET_SUFFIX = "/i";
@@ -101,6 +95,8 @@ namespace RuzdAnalytics
         // OnAwake is called when the instance is created
         void OnAwake()
         {
+            Log.SetLogLevel(1);
+
             // Setup Event Store
             if (Application.platform == RuntimePlatform.tvOS)
             {
@@ -273,36 +269,39 @@ namespace RuzdAnalytics
 
 
         // Public static methods called usually by the user
-        public static void TrackTestEvent()
-        {
-            Debug.Log("Test Event!");
-            Dictionary<string, object> event_data = new Dictionary<string, object>();
-            event_data.Add("myStringProperty", "hello world");
-            event_data.Add("myNumberProperty", 123);
-            SelfDescribing e = new SelfDescribing("iglu:com.ruzd/test/jsonschema/1-0-0", event_data);
-            Instance._TrackEvent(e.Build());
-        }
-
-        public static void TrackRunEvent(string action, string label = null, string value = null)
+        public static void TrackResourceEvent(string resourceName, double amount, string category = null, string label = null)
         {
             Dictionary<string, object> event_data = new Dictionary<string, object>
             {
-                { "category", "run" },
+                { "resourceName", resourceName },
+                { "amount", amount }
+            };
+            if (!string.IsNullOrEmpty(category)) event_data.Add("category", category);
+            if (!string.IsNullOrEmpty(label)) event_data.Add("label", label);
+            SelfDescribing e = new SelfDescribing("iglu:com.ruzd/resourceEvent/jsonschema/1-0-0", event_data);
+            Instance._TrackEvent(e.Build(), withRunContext: true);
+        }
+
+        public static void TrackRunEvent(string action, string category = null, string label = null, string value = null)
+        {
+            Dictionary<string, object> event_data = new Dictionary<string, object>
+            {
                 { "action", action }
             };
+            if (!string.IsNullOrEmpty(category)) event_data.Add("category", category);
             if (!string.IsNullOrEmpty(value)) event_data.Add("value", value);
             if (!string.IsNullOrEmpty(label)) event_data.Add("label", label);
             SelfDescribing e = new SelfDescribing("iglu:com.ruzd/runEvent/jsonschema/1-0-0", event_data);
             Instance._TrackEvent(e.Build(), withRunContext: true);
         }
 
-        public static void TrackGameEvent(string action, string label = null, string value = null)
+        public static void TrackGameEvent(string action, string category = null, string label = null, string value = null)
         {
             Dictionary<string, object> event_data = new Dictionary<string, object>
             {
-                { "category", "game" },
                 { "action", action }
             };
+            if (!string.IsNullOrEmpty(category)) event_data.Add("category", category);
             if (!string.IsNullOrEmpty(value)) event_data.Add("value", value);
             if (!string.IsNullOrEmpty(label)) event_data.Add("label", label);
             SelfDescribing e = new SelfDescribing("iglu:com.ruzd/gameEvent/jsonschema/1-0-0", event_data);
@@ -562,11 +561,12 @@ namespace RuzdAnalytics
                 timeCounter += timePassed;
                 frameCounter += frameCount;
             }
-            else
+            else if (timeCounter > 0.0f && frameCounter > 0)
             {
                 lastFramerate = (float)frameCounter / timeCounter;
                 frameCounter = 0;
                 timeCounter = 0.0f;
+                Debug.Log($"Framerate: {lastFramerate}");
             }
 
             if (!trackingEnabled)
@@ -575,9 +575,9 @@ namespace RuzdAnalytics
             }
 
             var currentTime = Utils.GetTimestamp();
-            if (!Utils.IsTimeInRange(lastEventTime, currentTime, sendIntervalSeconds*1000))
+            if (!Utils.IsTimeInRange(lastEventTime, currentTime, sendIntervalSeconds*1000) && lastFramerate > 0.0f)
             {
-                Debug.Log($"Framerate Event: {lastFramerate}");
+                Log.Debug($"Framerate Event: {lastFramerate}");
                 Analytics.Instance.TrackFPSEvent((int)lastFramerate);
             }
         }

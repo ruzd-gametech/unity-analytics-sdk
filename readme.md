@@ -15,7 +15,23 @@ https://github.com/ruzd-gametech/unity-analytics-sdk.git
 
 ### Unity Package Manager
 
-TBA
+#### Adding OpenUPM to your project
+
+1. In Unity, open the Edit menu, and choose Project Settings.
+2. In the list of sections at the left hand side of the window, select Package Manager.
+
+You need to add the following entry to the list of registries:
+
+1. In the Name field, type OpenUPM.
+2. In the URL field, type https://package.openupm.com.
+3. In the Scopes field, type com.ruzd.
+4. Save.
+
+#### Installing the package
+
+1. Open the Window menu, and choose Package Manager.
+2. In the toolbar, click Packages: In Project, and choose My Registries.
+3. Select the Ruzd Analytics SDK package, and click Install.
 
 ## Usage
 

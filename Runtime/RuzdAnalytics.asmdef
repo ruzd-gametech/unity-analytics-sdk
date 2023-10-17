@@ -7,9 +7,8 @@
     "allowUnsafeCode": false,
     "overrideReferences": true,
     "precompiledReferences": [
-        "SnowplowTracker.dll",
-        "Ruzd.Newtonsoft.Json.dll",
-        "Ruzd.LiteDB.dll"
+        "LiteDB.dll",
+        "SnowplowTracker.dll"
     ],
     "autoReferenced": true,
     "defineConstraints": [],
