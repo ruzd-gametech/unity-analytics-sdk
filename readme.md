@@ -3,6 +3,11 @@
 
 ## Installation
 
+## Requirements
+
+- Tested with Unity 2020.1 or newer
+- The package depends on [Newtonsoft.Json](https://docs.unity3d.com/Packages/com.unity.nuget.newtonsoft-json@2.0/manual/index.html). If you don't have it in your project already, you need to install it. 
+
 ### Git URL
 
 In Unity Package Manager choose `Add package from git URL`.

@@ -24,13 +24,15 @@ namespace RuzdAnalytics
         private bool trackingSetup = false;
         private long lastFPSEvent;
         private int FPS_MIN_INTERVAL_SECONDS = 10;
-        private HttpMethod httpMethod = HttpMethod.POST;
-        private readonly string POST_SUFFIX = "/com.snowplowanalytics.snowplow/tp2";
+        private readonly string POST_SUFFIX = "/com.ruzd/tp2";
         private readonly string GET_SUFFIX = "/i";
+        private string defaultPlayerId;
 
+        public HttpMethod httpMethod = HttpMethod.POST;
+        public HttpProtocol httpProtocol = HttpProtocol.HTTPS;
+        public string trackingPath;
         public string trackingEndpoint;
         public string ruzdGameId;
-        private string defaultPlayerId;
         public string customPlayerId;
         public string customVersion;
 
@@ -137,15 +139,27 @@ namespace RuzdAnalytics
             // Log warning if this is called again after the setup
             if (trackingSetup)
             {
-                Log.Warning("[RuzdAnalytics] Configuration changed after initial setup. This should not happen.");
+                Log.Warning("[RuzdAnalytics] Configuration changed after initial setup. Please make sure Analytics.Setup is only called once.");
             }
 
-            if (httpMethod == HttpMethod.GET)
+            // Setup Emitter
+            emitter.SetHttpMethod(httpMethod);
+            emitter.SetHttpProtocol(httpProtocol);
+
+            if(!string.IsNullOrEmpty(trackingPath))
             {
-                emitter.SetCollectorUri($"{trackingEndpoint}{GET_SUFFIX}");
-            } else if (httpMethod == HttpMethod.POST)
+                emitter.SetCollectorUri($"{trackingEndpoint}{trackingPath}");
+            }
+            else
             {
-                emitter.SetCollectorUri($"{trackingEndpoint}{POST_SUFFIX}");
+                if (httpMethod == HttpMethod.GET)
+                {
+                    emitter.SetCollectorUri($"{trackingEndpoint}{GET_SUFFIX}");
+                }
+                else if (httpMethod == HttpMethod.POST)
+                {
+                    emitter.SetCollectorUri($"{trackingEndpoint}{POST_SUFFIX}");
+                }
             }
             subject = new Subject();
             var screenRes = AnalyticsUtils.GetScreenResolution();
@@ -241,6 +255,11 @@ namespace RuzdAnalytics
             tracker.Track(newEvent);
         }
 
+        public void setBuildVersion(string buildVersion)
+        {
+            customVersion = buildVersion;
+        }
+
         public void SetRun(string runIdentifier, long playTimeSeconds)
         {
             if (currentRun == null)
@@ -328,7 +347,9 @@ namespace RuzdAnalytics
             Instance.TrackFPSEvent(averageFPS);
         }
 
-        public static void Setup(string trackingEndpoint, string ruzdGameId, string buildVersion = null)
+        public static void Setup(string trackingEndpoint, string ruzdGameId, string buildVersion = null,
+                                 HttpMethod httpMethod = HttpMethod.POST, HttpProtocol httpProtocol = HttpProtocol.HTTPS,
+                                 string customPath = null)
         {
             // Check Game Id
             if (ruzdGameId.Length < 8 || ruzdGameId.Length > 32)
@@ -343,10 +364,16 @@ namespace RuzdAnalytics
             }
             if (!string.IsNullOrEmpty(buildVersion))
             {
-                Instance.customVersion = buildVersion;
+                Instance.setBuildVersion(buildVersion);
             }
             Instance.trackingEndpoint = trackingEndpoint;
             Instance.ruzdGameId = ruzdGameId;
+            Instance.httpMethod = httpMethod;
+            Instance.httpProtocol = httpProtocol;
+            if (!string.IsNullOrEmpty(customPath))
+            {
+                Instance.trackingPath = customPath;
+            }
             Instance.OnConfigurationChanged();
         }
 
