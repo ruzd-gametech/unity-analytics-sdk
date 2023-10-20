@@ -23,7 +23,7 @@ namespace RuzdAnalytics
         private bool trackingRunning = false;
         private bool trackingSetup = false;
         private long lastFPSEvent;
-        private int FPS_MIN_INTERVAL_SECONDS = 10;
+        private int FPS_MIN_INTERVAL_SECONDS = 60;
         private readonly string POST_SUFFIX = "/com.ruzd/tp2";
         private readonly string GET_SUFFIX = "/i";
         private string defaultPlayerId;
