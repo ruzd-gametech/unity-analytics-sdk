@@ -76,15 +76,12 @@ RuzdAnalytics.Analytics.StartTracking();
 
 ### Track Event
 
-To track a general event you can use `RuzdAnalytics.Analytics.TrackGameEvent`. Usually you also want to add the run context to the event. You can do this by updating the run context with `RuzdAnalytics.Analytics.UpdateRun(<ID_OF_THE_RUN>, <RUN_PLAY_TIME_IN_SECONDS>)` and using `RuzdAnalytics.Analytics.TrackRunEvent` afterwards.
+To track a general event you can use `RuzdAnalytics.Analytics.TrackGameEvent`. Usually you also want to add the run context to the event. You can do this by using `RuzdAnalytics.Analytics.TrackRunEvent` which works like `TrackGameEvent` but takes the identifier of the run and the time in seconds off the run time as additional parameters.
 
 ```csharp
-RuzdAnalytics.Analytics.UpdateRun(current_runid.ToString(), 0);
-RuzdAnalytics.Analytics.TrackRunEvent("started");
+RuzdAnalytics.Analytics.TrackRunEvent(current_runid.ToString(), 0, "started");
 // some time later
-RuzdAnalytics.Analytics.UpdateRun(current_runid.ToString(), 12);
-RuzdAnalytics.Analytics.TrackRunEvent("gravity_changed", value: gravity.ToString());
+RuzdAnalytics.Analytics.TrackRunEvent(current_runid.ToString(), 12, "gravity_changed", value: gravity.ToString());
 // some time later
-RuzdAnalytics.Analytics.UpdateRun(current_runid.ToString(), 35);
-RuzdAnalytics.Analytics.TrackRunEvent("finished", value: "reason: death");
+RuzdAnalytics.Analytics.TrackRunEvent(current_runid.ToString(), 35, "finished", value: "reason: death");
 ```

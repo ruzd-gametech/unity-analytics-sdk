@@ -1,6 +1,6 @@
 {
     "name": "com.ruzd.analytics",
-    "version": "1.0.3",
+    "version": "1.0.4",
     "displayName": "ruzd analytics SDK",
     "description": "ruzd analytics SDK for Unity",
     "unity": "2020.1",

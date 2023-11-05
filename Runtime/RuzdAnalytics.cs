@@ -7,6 +7,7 @@ using SnowplowTracker.Enums;
 using SnowplowTracker.Payloads.Contexts;
 using SnowplowTracker.Payloads;
 using SnowplowTracker.Storage;
+using System;
 
 namespace RuzdAnalytics
 {
@@ -36,6 +37,7 @@ namespace RuzdAnalytics
         public string customPlayerId;
         public string customVersion;
 
+        private static readonly int MAX_FEEDBACK_LENGTH = 500;
         private static readonly object Lock = new object();
         public static bool Quitting { get; private set; }
 
@@ -298,11 +300,26 @@ namespace RuzdAnalytics
             if (!string.IsNullOrEmpty(category)) event_data.Add("category", category);
             if (!string.IsNullOrEmpty(label)) event_data.Add("label", label);
             SelfDescribing e = new SelfDescribing("iglu:com.ruzd/resourceEvent/jsonschema/1-0-0", event_data);
+            Instance._TrackEvent(e.Build(), withRunContext: false);
+        }
+
+        public static void TrackRunResourceEvent(string runIdentifier, long runPlayTimeSeconds, string resourceName, double amount, string category = null, string label = null)
+        {
+            Instance.SetRun(runIdentifier, runPlayTimeSeconds);
+            Dictionary<string, object> event_data = new Dictionary<string, object>
+            {
+                { "resourceName", resourceName },
+                { "amount", amount }
+            };
+            if (!string.IsNullOrEmpty(category)) event_data.Add("category", category);
+            if (!string.IsNullOrEmpty(label)) event_data.Add("label", label);
+            SelfDescribing e = new SelfDescribing("iglu:com.ruzd/resourceEvent/jsonschema/1-0-0", event_data);
             Instance._TrackEvent(e.Build(), withRunContext: true);
         }
 
-        public static void TrackRunEvent(string action, string category = null, string label = null, string value = null)
+        public static void TrackRunEvent(string runIdentifier, long runPlayTimeSeconds, string action, string category = null, string label = null, string value = null)
         {
+            Instance.SetRun(runIdentifier, runPlayTimeSeconds);
             Dictionary<string, object> event_data = new Dictionary<string, object>
             {
                 { "action", action }
@@ -310,7 +327,50 @@ namespace RuzdAnalytics
             if (!string.IsNullOrEmpty(category)) event_data.Add("category", category);
             if (!string.IsNullOrEmpty(value)) event_data.Add("value", value);
             if (!string.IsNullOrEmpty(label)) event_data.Add("label", label);
-            SelfDescribing e = new SelfDescribing("iglu:com.ruzd/runEvent/jsonschema/1-0-0", event_data);
+            SelfDescribing e = new SelfDescribing("iglu:com.ruzd/gameEvent/jsonschema/1-0-0", event_data);
+            Instance._TrackEvent(e.Build(), withRunContext: true);
+        }
+
+        public static void TrackFeedback(int score, string message = null, string category = null, string label = null)
+        {
+            Dictionary<string, object> event_data = new Dictionary<string, object>
+            {
+                { "score", score }
+            };
+            if (!string.IsNullOrEmpty(message))
+            {
+                if (message.Length > MAX_FEEDBACK_LENGTH)
+                {
+                    message = message.Substring(0, MAX_FEEDBACK_LENGTH);
+                }
+                event_data.Add("message", message);
+            }
+            
+            if (!string.IsNullOrEmpty(category)) event_data.Add("category", category);
+            if (!string.IsNullOrEmpty(label)) event_data.Add("label", label);
+            SelfDescribing e = new SelfDescribing("iglu:com.ruzd/feedbackEvent/jsonschema/1-0-0", event_data);
+            Instance._TrackEvent(e.Build(), withRunContext: false);
+        }
+
+        public static void TrackRunFeedback(string runIdentifier, long runPlayTimeSeconds, int score, string message = null, string category = null, string label = null)
+        {
+            Instance.SetRun(runIdentifier, runPlayTimeSeconds);
+            Dictionary<string, object> event_data = new Dictionary<string, object>
+            {
+                { "score", score }
+            };
+            if (!string.IsNullOrEmpty(message))
+            {
+                if (message.Length > MAX_FEEDBACK_LENGTH)
+                {
+                    message = message.Substring(0, MAX_FEEDBACK_LENGTH);
+                }
+                event_data.Add("message", message);
+            }
+
+            if (!string.IsNullOrEmpty(category)) event_data.Add("category", category);
+            if (!string.IsNullOrEmpty(label)) event_data.Add("label", label);
+            SelfDescribing e = new SelfDescribing("iglu:com.ruzd/feedbackEvent/jsonschema/1-0-0", event_data);
             Instance._TrackEvent(e.Build(), withRunContext: true);
         }
 
