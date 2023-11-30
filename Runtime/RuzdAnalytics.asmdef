@@ -8,7 +8,8 @@
     "overrideReferences": true,
     "precompiledReferences": [
         "LiteDB.dll",
-        "SnowplowTracker.dll"
+        "SnowplowTracker.dll",
+        "Newtonsoft.Json.dll"
     ],
     "autoReferenced": true,
     "defineConstraints": [],

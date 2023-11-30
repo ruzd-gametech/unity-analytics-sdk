@@ -4,10 +4,7 @@ using SnowplowTracker;
 using SnowplowTracker.Emitters;
 using SnowplowTracker.Events;
 using SnowplowTracker.Enums;
-using SnowplowTracker.Payloads.Contexts;
-using SnowplowTracker.Payloads;
 using SnowplowTracker.Storage;
-using System;
 
 namespace RuzdAnalytics
 {
@@ -19,7 +16,6 @@ namespace RuzdAnalytics
         private Tracker tracker;
         private Subject subject;
         private Session session;
-        private GameRun currentRun;
         private SystemContext sysContext;
         private bool trackingRunning = false;
         private bool trackingSetup = false;
@@ -37,7 +33,7 @@ namespace RuzdAnalytics
         public string customPlayerId;
         public string customVersion;
 
-        private static readonly int MAX_FEEDBACK_LENGTH = 500;
+        private static readonly int MAX_FEEDBACK_LENGTH = 512;
         private static readonly object Lock = new object();
         public static bool Quitting { get; private set; }
 
@@ -99,8 +95,6 @@ namespace RuzdAnalytics
         // OnAwake is called when the instance is created
         void OnAwake()
         {
-            Log.SetLogLevel(1);
-
             // Setup Event Store
             if (Application.platform == RuntimePlatform.tvOS)
             {
@@ -130,7 +124,7 @@ namespace RuzdAnalytics
 
             // Preset FPS timer
             lastFPSEvent = Utils.GetTimestamp();
-            sysContext = SystemContext.GetSystemContext();
+            sysContext = new SystemContext();
 
             Log.Debug("[RuzdAnalytics] Inititalized");
         }
@@ -138,6 +132,7 @@ namespace RuzdAnalytics
         // OnConfigurationChanged is called after the user setup
         public void OnConfigurationChanged()
         {
+            Log.Debug("[RuzdAnalytics] Configuration changed.");
             // Log warning if this is called again after the setup
             if (trackingSetup)
             {
@@ -150,7 +145,9 @@ namespace RuzdAnalytics
 
             if(!string.IsNullOrEmpty(trackingPath))
             {
+
                 emitter.SetCollectorUri($"{trackingEndpoint}{trackingPath}");
+                Log.Debug($"[RuzdAnalytics] Using custom tracking path: {trackingEndpoint}{trackingPath}");
             }
             else
             {
@@ -217,7 +214,7 @@ namespace RuzdAnalytics
             return sysContext;
         }
 
-        public void _TrackEvent(IEvent newEvent, bool withRunContext=true)
+        public void _TrackEvent(RuzdEvent newEvent)
         {
             if (!trackingSetup)
             {
@@ -230,31 +227,9 @@ namespace RuzdAnalytics
                 return;
             }
 
-            System.Type eType = newEvent.GetType();
-            
-            if (withRunContext && currentRun != null)
-            {
-                if (eType == typeof(SelfDescribing))
-                {
-                    SelfDescribing newNewEvent = (SelfDescribing)newEvent;
-                    var cc = newNewEvent.GetContexts();
-                    cc.Add(currentRun.GetRunContext());
-                    newNewEvent.SetCustomContext(cc);
-                    tracker.Track(newNewEvent);
-                    return;
-                }
-                if (eType == typeof(Structured))
-                {
-                    Structured newNewEvent = (Structured)newEvent;
-                    var cc = newNewEvent.GetContexts();
-                    cc.Add(currentRun.GetRunContext());
-                    newNewEvent.SetCustomContext(cc);
-                    tracker.Track(newNewEvent);
-                    return;
-                }
-            }
-
-            tracker.Track(newEvent);
+            Log.Debug($"[RuzdAnalytics] Tracking event: {newEvent.GetType()}");
+            SelfDescribing spEvent = newEvent.GetSPEvent();
+            tracker.Track(spEvent.Build());
         }
 
         public void setBuildVersion(string buildVersion)
@@ -262,149 +237,99 @@ namespace RuzdAnalytics
             customVersion = buildVersion;
         }
 
-        public void SetRun(string runIdentifier, long playTimeSeconds)
-        {
-            if (currentRun == null)
-            {
-                currentRun = new GameRun(runIdentifier, playTimeSeconds);
-                return;
-            }
-            currentRun.update(runIdentifier, playTimeSeconds);
-        }
-
-        public void TrackFPSEvent(int averageFPS)
+        public void TrackFPS(double averageFPS)
         {
             long checkTime = Utils.GetTimestamp();
             if (Utils.IsTimeInRange(lastFPSEvent, checkTime, FPS_MIN_INTERVAL_SECONDS*1000))
             {
                 return;
             }
-            Dictionary<string, object> event_data = new Dictionary<string, object>
-            {
-                { "averageFPS", averageFPS }
-            };
-            SelfDescribing e = new SelfDescribing("iglu:com.ruzd/fps/jsonschema/1-0-0", event_data);
+            GameEvent fpsEvent = new GameEvent("fps", category: "fps",
+                value: averageFPS.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            FpsContext fpsContext = new FpsContext(averageFPS);
+            fpsEvent.addContext(fpsContext);
             lastFPSEvent = checkTime;
-            _TrackEvent(e.Build());
+            _TrackEvent(fpsEvent);
         }
 
 
         // Public static methods called usually by the user
-        public static void TrackResourceEvent(string resourceName, double amount, string category = null, string label = null)
+        public static void TrackEvent(RuzdEvent ev)
         {
-            Dictionary<string, object> event_data = new Dictionary<string, object>
-            {
-                { "resourceName", resourceName },
-                { "amount", amount }
-            };
-            if (!string.IsNullOrEmpty(category)) event_data.Add("category", category);
-            if (!string.IsNullOrEmpty(label)) event_data.Add("label", label);
-            SelfDescribing e = new SelfDescribing("iglu:com.ruzd/resourceEvent/jsonschema/1-0-0", event_data);
-            Instance._TrackEvent(e.Build(), withRunContext: false);
+            Instance._TrackEvent(ev);
         }
 
-        public static void TrackRunResourceEvent(string runIdentifier, long runPlayTimeSeconds, string resourceName, double amount, string category = null, string label = null)
+        public static void TrackError(ErrorSeverity severity, string message)
         {
-            Instance.SetRun(runIdentifier, runPlayTimeSeconds);
-            Dictionary<string, object> event_data = new Dictionary<string, object>
-            {
-                { "resourceName", resourceName },
-                { "amount", amount }
-            };
-            if (!string.IsNullOrEmpty(category)) event_data.Add("category", category);
-            if (!string.IsNullOrEmpty(label)) event_data.Add("label", label);
-            SelfDescribing e = new SelfDescribing("iglu:com.ruzd/resourceEvent/jsonschema/1-0-0", event_data);
-            Instance._TrackEvent(e.Build(), withRunContext: true);
+            ErrorEvent e = new ErrorEvent((int)severity, message);
+            Instance._TrackEvent(e);
         }
 
-        public static void TrackRunEvent(string runIdentifier, long runPlayTimeSeconds, string action, string category = null, string label = null, string value = null)
+        public static void TrackRunProgressEvent(string runIdentifier, long runPlayTimeSeconds,
+            string action, string category = null, string label = null, string value = null)
         {
-            Instance.SetRun(runIdentifier, runPlayTimeSeconds);
-            Dictionary<string, object> event_data = new Dictionary<string, object>
-            {
-                { "action", action }
-            };
-            if (!string.IsNullOrEmpty(category)) event_data.Add("category", category);
-            if (!string.IsNullOrEmpty(value)) event_data.Add("value", value);
-            if (!string.IsNullOrEmpty(label)) event_data.Add("label", label);
-            SelfDescribing e = new SelfDescribing("iglu:com.ruzd/gameEvent/jsonschema/1-0-0", event_data);
-            Instance._TrackEvent(e.Build(), withRunContext: true);
+            ProgressEvent e = new ProgressEvent(action, category: category, label: label, value: value);
+            RunContext c = new RunContext(runIdentifier, runPlayTimeSeconds);
+            e.addContext(c);
+            Instance._TrackEvent(e);
         }
 
-        public static void TrackFeedback(int score, string message = null, string category = null, string label = null)
+        public static void TrackRunResourceEvent(string runIdentifier, long runPlayTimeSeconds, string name,
+            double amount, string category = null, string label = null)
         {
-            Dictionary<string, object> event_data = new Dictionary<string, object>
-            {
-                { "score", score }
-            };
-            if (!string.IsNullOrEmpty(message))
-            {
-                if (message.Length > MAX_FEEDBACK_LENGTH)
-                {
-                    message = message.Substring(0, MAX_FEEDBACK_LENGTH);
-                }
-                event_data.Add("message", message);
-            }
+            string value = amount.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            ResourceEvent e = new ResourceEvent(name, value: value, category: category, label: label);
+            RunContext c = new RunContext(runIdentifier, runPlayTimeSeconds);
+            e.addContext(c);
+            Instance._TrackEvent(e);
+        }
+
+        public static void TrackRunEvent(string runIdentifier, long runPlayTimeSeconds, string action,
+            string category = null, string label = null, string value = null)
+        {
+            GameEvent e = new GameEvent(action, category: category, label: label, value: value);
+            RunContext c = new RunContext(runIdentifier, runPlayTimeSeconds);
+            e.addContext(c);
+            Instance._TrackEvent(e);
+        }
+
+        public static void sendFeedback(int rating, string message = null, List<RuzdContext> contexts = null)
+        {
             
-            if (!string.IsNullOrEmpty(category)) event_data.Add("category", category);
-            if (!string.IsNullOrEmpty(label)) event_data.Add("label", label);
-            SelfDescribing e = new SelfDescribing("iglu:com.ruzd/feedbackEvent/jsonschema/1-0-0", event_data);
-            Instance._TrackEvent(e.Build(), withRunContext: false);
-        }
-
-        public static void TrackRunFeedback(string runIdentifier, long runPlayTimeSeconds, int score, string message = null, string category = null, string label = null)
-        {
-            Instance.SetRun(runIdentifier, runPlayTimeSeconds);
-            Dictionary<string, object> event_data = new Dictionary<string, object>
+            if (message != null && message.Length > MAX_FEEDBACK_LENGTH)
             {
-                { "score", score }
-            };
-            if (!string.IsNullOrEmpty(message))
-            {
-                if (message.Length > MAX_FEEDBACK_LENGTH)
-                {
-                    message = message.Substring(0, MAX_FEEDBACK_LENGTH);
-                }
-                event_data.Add("message", message);
+                message = message.Substring(0, MAX_FEEDBACK_LENGTH);
             }
 
-            if (!string.IsNullOrEmpty(category)) event_data.Add("category", category);
-            if (!string.IsNullOrEmpty(label)) event_data.Add("label", label);
-            SelfDescribing e = new SelfDescribing("iglu:com.ruzd/feedbackEvent/jsonschema/1-0-0", event_data);
-            Instance._TrackEvent(e.Build(), withRunContext: true);
+
+            // todo send feedback directly to API
+
+
+            GameEvent e = new GameEvent("feedback", category: "builtin",
+                value: rating.ToString(System.Globalization.CultureInfo.InvariantCulture), label: "ruzd_internal");
+            // add contexts if any
+            if (contexts != null)
+            {
+                foreach (RuzdContext c in contexts)
+                {
+                    e.addContext(c);
+                }
+            }
+            Instance._TrackEvent(e);
         }
 
         public static void TrackGameEvent(string action, string category = null, string label = null, string value = null)
         {
-            Dictionary<string, object> event_data = new Dictionary<string, object>
-            {
-                { "action", action }
-            };
-            if (!string.IsNullOrEmpty(category)) event_data.Add("category", category);
-            if (!string.IsNullOrEmpty(value)) event_data.Add("value", value);
-            if (!string.IsNullOrEmpty(label)) event_data.Add("label", label);
-            SelfDescribing e = new SelfDescribing("iglu:com.ruzd/gameEvent/jsonschema/1-0-0", event_data);
-            Instance._TrackEvent(e.Build(), withRunContext: false);
+            GameEvent e = new GameEvent(action, category: category, label: label, value: value);
+            Instance._TrackEvent(e);
         }
 
         public static void TrackGameStart()
         {
-            Dictionary<string, object> event_data = new Dictionary<string, object>
-            {
-                { "category", "game" },
-                { "action", "start" },
-                { "label", "systemContext" }
-            };
-            SelfDescribing e = new SelfDescribing("iglu:com.ruzd/gameEvent/jsonschema/1-0-0", event_data);
-            var cc = e.GetContexts();
-            cc.Add(Instance.GetSystemContext());
-            e.SetCustomContext(cc);
-            Instance._TrackEvent(e.Build(), withRunContext: false);
-        }
-
-        public static void TrackFPS(int averageFPS)
-        {
-            Instance.TrackFPSEvent(averageFPS);
+            GameEvent e = new GameEvent("start", category: "builtin", label: "ruzd_internal");
+            SystemContext systemContext = Instance.GetSystemContext();
+            e.addContext(systemContext);
+            Instance._TrackEvent(e);
         }
 
         public static void Setup(string trackingEndpoint, string ruzdGameId, string buildVersion = null,
@@ -435,11 +360,6 @@ namespace RuzdAnalytics
                 Instance.trackingPath = customPath;
             }
             Instance.OnConfigurationChanged();
-        }
-
-        public static void UpdateRun(string runIdentifier, long playTimeSeconds)
-        {
-            Instance.SetRun(runIdentifier, playTimeSeconds);
         }
 
         public static void StartTracking(bool dontSendStartEvent = false)
@@ -527,29 +447,6 @@ namespace RuzdAnalytics
         }
     }
 
-    public class RunContext : AbstractContext<RunContext>
-    {
-        public RunContext SetRunId(string runId)
-        {
-            this.DoAdd("runId", runId);
-            return this;
-        }
-
-        public RunContext SetPlayTimeSeconds(long playTimeSeconds)
-        {
-            this.DoAdd("playTimeSeconds", playTimeSeconds);
-            return this;
-        }
-
-        public override RunContext Build()
-        {
-            Utils.CheckArgument(this.data.ContainsKey("runId"), "RunContext requires 'runId'.");
-            this.schema = "iglu:com.ruzd/runContext/jsonschema/1-0-0";
-            this.context = new SelfDescribingJson(this.schema, this.data);
-            return this;
-        }
-    }
-
     public class GameRun
     {
         public string runId;
@@ -571,43 +468,10 @@ namespace RuzdAnalytics
             this.playTimeSeconds = playTimeSeconds;
         }
 
-        public RunContext GetRunContext()
+        public RunContext GetContext()
         {
-            RunContext c = new RunContext();
-            c.SetRunId(runId);
-            c.SetPlayTimeSeconds(playTimeSeconds);
-            return c.Build();
-        }
-    }
-
-    public class SystemContext : AbstractContext<SystemContext>
-    {
-        private static bool USE_DEVICE_ID = false;
-
-        public override SystemContext Build()
-        {
-            this.schema = "iglu:com.ruzd/systemContext/jsonschema/1-0-0";
-            this.context = new SelfDescribingJson(this.schema, this.data);
-            return this;
-        }
-        public static SystemContext GetSystemContext()
-        {
-            SystemContext c = new SystemContext();
-            if (USE_DEVICE_ID)
-            {
-                c.DoAdd("dId", SystemInfo.deviceUniqueIdentifier);
-            }
-            c.DoAdd("dModel", SystemInfo.deviceModel);
-            c.DoAdd("dType", SystemInfo.deviceType.ToString());
-            c.DoAdd("gName", SystemInfo.graphicsDeviceName);
-            c.DoAdd("gType", SystemInfo.graphicsDeviceType.ToString());
-            c.DoAdd("gMem", SystemInfo.graphicsMemorySize);
-            c.DoAdd("osName", SystemInfo.operatingSystem);
-            c.DoAdd("pType", SystemInfo.processorType);
-            c.DoAdd("pCount", SystemInfo.processorCount);
-            c.DoAdd("pFreq", SystemInfo.processorFrequency);
-            c.DoAdd("sysMem", SystemInfo.systemMemorySize);
-            return c.Build();
+            RunContext c = new RunContext(runId, playTimeSeconds);
+            return c;
         }
     }
 
@@ -665,7 +529,7 @@ namespace RuzdAnalytics
             if (!Utils.IsTimeInRange(lastEventTime, currentTime, sendIntervalSeconds*1000) && lastFramerate > 0.0f)
             {
                 Log.Debug($"Framerate Event: {lastFramerate}");
-                Analytics.Instance.TrackFPSEvent((int)lastFramerate);
+                Analytics.Instance.TrackFPS((int)lastFramerate);
             }
         }
 
@@ -678,5 +542,31 @@ namespace RuzdAnalytics
         {
             return lastFramerate;
         }
+    }
+
+    public enum ErrorSeverity
+    {
+        WARNING = 30,
+        ERROR = 40,
+        CRITICAL = 50
+    }
+
+    public enum LogLevel
+    {
+        DEBUG = 10,
+        INFO = 20,
+        WARNING = 30,
+        ERROR = 40,
+        CRITICAL = 50
+    }
+
+    public enum TrackingLevel
+    {
+        NOTSET = 0,
+        FINER = 10,
+        FINE = 20,
+        NORMAL = 30,
+        IMPORTANT = 40,
+        CRITICAL = 50
     }
 }
