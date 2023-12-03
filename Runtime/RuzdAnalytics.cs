@@ -5,6 +5,7 @@ using SnowplowTracker.Emitters;
 using SnowplowTracker.Events;
 using SnowplowTracker.Enums;
 using SnowplowTracker.Storage;
+using System.Text;
 
 namespace RuzdAnalytics
 {
@@ -13,10 +14,14 @@ namespace RuzdAnalytics
         private static Analytics _instance;
         private IEmitter emitter;
         private IStore store;
+        private APIClient apiClient;
         private Tracker tracker;
         private Subject subject;
         private Session session;
         private SystemContext sysContext;
+        private bool sendStartEvent = true;
+        private bool trackingEnabledUser = false;
+        private bool trackingEnabledServer = false;
         private bool trackingRunning = false;
         private bool trackingSetup = false;
         private long lastFPSEvent;
@@ -27,11 +32,13 @@ namespace RuzdAnalytics
 
         public HttpMethod httpMethod = HttpMethod.POST;
         public HttpProtocol httpProtocol = HttpProtocol.HTTPS;
-        public string trackingPath;
-        public string trackingEndpoint;
+        public string customTrackingPath;
+        public string customTrackingEndpoint;
+        public string serverTrackingEndpoint;
         public string ruzdGameId;
         public string customPlayerId;
         public string customVersion;
+        public TrackingLevel trackingLevel = TrackingLevel.NORMAL;
 
         private static readonly int MAX_FEEDBACK_LENGTH = 512;
         private static readonly object Lock = new object();
@@ -136,30 +143,46 @@ namespace RuzdAnalytics
             // Log warning if this is called again after the setup
             if (trackingSetup)
             {
-                Log.Warning("[RuzdAnalytics] Configuration changed after initial setup. Please make sure Analytics.Setup is only called once.");
+                Log.Warning("[RuzdAnalytics] Configuration changed after initial Configure. Please make sure Analytics.Configure is only called once.");
             }
 
-            // Setup Emitter
+            // Setup API Client
+            apiClient = new APIClient(APIClient.DEFAULT_API_ENDPOINT, ruzdGameId);
+            apiClient.GetRemoteTrackingConfig().ContinueWith(task =>
+            {
+                if (task.IsFaulted)
+                {
+                    Log.Error("[RuzdAnalytics] Failed to get remote tracking config.");
+                    return;
+                }
+                RemoteTrackingConfig config = task.Result;
+                if (config.valid)
+                {
+                    Log.Debug("[RuzdAnalytics] Got valid Remote tracking config.");
+                    trackingEnabledServer = config.enabled;
+                    if (config.level != TrackingLevel.NOTSET)
+                    {
+                        Log.Debug($"[RuzdAnalytics] Remote tracking level: {config.level}");
+                        trackingLevel = config.level;
+                    }
+                    if (!string.IsNullOrEmpty(config.trackingEndpoint))
+                    {
+                        Log.Debug($"[RuzdAnalytics] Remote tracking endpoint: {config.trackingEndpoint}");
+                        serverTrackingEndpoint = config.trackingEndpoint;
+                    }
+                }
+                else
+                {
+                    Log.Debug("[RuzdAnalytics] Invalid remote tracking config.");
+                    // we set the trackingEnabledServer to true because we want to track the error
+                    trackingEnabledServer = true;
+                }
+                OnTrackingStart();
+            });
+
+            // Basic Setup Emitter
             emitter.SetHttpMethod(httpMethod);
             emitter.SetHttpProtocol(httpProtocol);
-
-            if(!string.IsNullOrEmpty(trackingPath))
-            {
-
-                emitter.SetCollectorUri($"{trackingEndpoint}{trackingPath}");
-                Log.Debug($"[RuzdAnalytics] Using custom tracking path: {trackingEndpoint}{trackingPath}");
-            }
-            else
-            {
-                if (httpMethod == HttpMethod.GET)
-                {
-                    emitter.SetCollectorUri($"{trackingEndpoint}{GET_SUFFIX}");
-                }
-                else if (httpMethod == HttpMethod.POST)
-                {
-                    emitter.SetCollectorUri($"{trackingEndpoint}{POST_SUFFIX}");
-                }
-            }
             subject = new Subject();
             var screenRes = AnalyticsUtils.GetScreenResolution();
             var windowRes = AnalyticsUtils.GetGameResolution();
@@ -176,12 +199,27 @@ namespace RuzdAnalytics
         {
             if (!trackingSetup)
             {
-                Log.Warning("[RuzdAnalytics] Run Analytics.Setup() with valid configuration before starting event tracking.");
+                Log.Warning("[RuzdAnalytics] Run Analytics.Configure() with valid configuration before starting event tracking.");
                 return;
             }
+            if (!trackingEnabledUser)
+            {
+                Log.Debug("[RuzdAnalytics] Tracking was not enabled by the user.");
+                return;
+            }
+            if (!trackingEnabledServer)
+            {
+                Log.Debug("[RuzdAnalytics] Tracking was not enabled by the server.");
+                return;
+            }
+            emitter.SetCollectorUri(GetCollectorUri());
             tracker.StartEventTracking();
             trackingRunning = true;
             Log.Debug("[RuzdAnalytics] Tracking started");
+            if (sendStartEvent)
+            {
+                TrackGameStart();
+            }
         }
 
         public void OnTrackingStop()
@@ -209,6 +247,48 @@ namespace RuzdAnalytics
             return Application.version;
         }
 
+        string GetCollectorUri()
+        {
+            StringBuilder sb = new StringBuilder();
+            if (!string.IsNullOrEmpty(customTrackingEndpoint))
+            {
+                // Check Tracking Endpoint (should not end with /)
+                if (customTrackingEndpoint.EndsWith("/"))
+                {
+                    sb.Append(customTrackingEndpoint.Substring(0, customTrackingEndpoint.Length - 1));
+                } else
+                {
+                    sb.Append(customTrackingEndpoint);
+                }
+            }
+            else if (!string.IsNullOrEmpty(serverTrackingEndpoint))
+            {
+                sb.Append(serverTrackingEndpoint);
+            }
+            else
+            {
+                return null;
+            }
+            // Add Path
+            if (!string.IsNullOrEmpty(customTrackingPath))
+            {
+                sb.Append(customTrackingPath);
+                Log.Debug($"[RuzdAnalytics] Using custom tracking path: {sb.ToString()}");
+            }
+            else
+            {
+                if (httpMethod == HttpMethod.GET)
+                {
+                    sb.Append(GET_SUFFIX);
+                }
+                else if (httpMethod == HttpMethod.POST)
+                {
+                    sb.Append(POST_SUFFIX);
+                }
+            }
+            return sb.ToString();
+        }
+
         public SystemContext GetSystemContext()
         {
             return sysContext;
@@ -218,7 +298,7 @@ namespace RuzdAnalytics
         {
             if (!trackingSetup)
             {
-                Log.Warning("[RuzdAnalytics] Run Analytics.Setup() with valid configuration before tracking Events.");
+                Log.Warning("[RuzdAnalytics] Run Analytics.Configure() with valid configuration before tracking Events.");
                 return;
             }
             if (!trackingRunning)
@@ -232,9 +312,14 @@ namespace RuzdAnalytics
             tracker.Track(spEvent.Build());
         }
 
-        public void setBuildVersion(string buildVersion)
+        public void SetCustomBuildVersion(string buildVersion)
         {
             customVersion = buildVersion;
+        }
+
+        public void SetTrackingEndpoint(string trackingEndpoint)
+        {
+            this.customTrackingEndpoint = trackingEndpoint;
         }
 
         public void TrackFPS(double averageFPS)
@@ -332,43 +417,44 @@ namespace RuzdAnalytics
             Instance._TrackEvent(e);
         }
 
-        public static void Setup(string trackingEndpoint, string ruzdGameId, string buildVersion = null,
-                                 HttpMethod httpMethod = HttpMethod.POST, HttpProtocol httpProtocol = HttpProtocol.HTTPS,
-                                 string customPath = null)
+        public static void Configure(string ruzdGameId, string trackingEndpoint = null, string buildVersion = null,
+                                     HttpMethod httpMethod = HttpMethod.POST, HttpProtocol httpProtocol = HttpProtocol.HTTPS,
+                                     string customPath = null)
         {
             // Check Game Id
             if (ruzdGameId.Length < 8 || ruzdGameId.Length > 32)
             {
-                Log.Error("[RuzdAnalytics] Setup failed, Invalid length of ruzdGameId");
+                Log.Error("[RuzdAnalytics] Configure failed, Invalid length of ruzdGameId");
                 return;
             }
-            // Check Tracking Endpoint (should not end with /)
-            if (trackingEndpoint.EndsWith("/"))
-            {
-                trackingEndpoint = trackingEndpoint.Substring(0, trackingEndpoint.Length - 1);
-            }
-            if (!string.IsNullOrEmpty(buildVersion))
-            {
-                Instance.setBuildVersion(buildVersion);
-            }
-            Instance.trackingEndpoint = trackingEndpoint;
+            Instance.SetTrackingEndpoint(trackingEndpoint);
+            Instance.SetCustomBuildVersion(buildVersion);
+            Instance.customTrackingEndpoint = trackingEndpoint;
             Instance.ruzdGameId = ruzdGameId;
             Instance.httpMethod = httpMethod;
             Instance.httpProtocol = httpProtocol;
-            if (!string.IsNullOrEmpty(customPath))
-            {
-                Instance.trackingPath = customPath;
-            }
+            Instance.customTrackingPath = customPath;
             Instance.OnConfigurationChanged();
+        }
+
+        public static void SetBuildVersion(string buildVersion)
+        {
+            Instance.SetCustomBuildVersion(buildVersion);
+        }
+
+        public static void Setup(string trackingEndpoint, string ruzdGameId, string buildVersion = null,
+                                 HttpMethod httpMethod = HttpMethod.POST, HttpProtocol httpProtocol = HttpProtocol.HTTPS,
+                                 string customPath = null)
+        {
+            Log.Warning("[RuzdAnalytics] Analytics.Setup(...) is deprecated, please use Analytics.Configure(...) instead.");
+            Configure(ruzdGameId, trackingEndpoint, buildVersion, httpMethod, httpProtocol, customPath);
         }
 
         public static void StartTracking(bool dontSendStartEvent = false)
         {
+            Instance.trackingEnabledUser = true;
+            Instance.sendStartEvent = !dontSendStartEvent;
             Instance.OnTrackingStart();
-            if (!dontSendStartEvent)
-            {
-                TrackGameStart();
-            }
         }
 
         public static void StopTracking()
@@ -389,6 +475,45 @@ namespace RuzdAnalytics
         public static bool IsRunning()
         {
             return Instance.trackingRunning;
+        }
+
+        public static bool CheckTrackingLevel(TrackingLevel level)
+        {
+            // Check if tracking is enabled for this level
+            // example: if level is TrackingLevel.FINE (20) and trackingLevel is TrackingLevel.NORMAL (30)
+            // then tracking is not enabled for this level
+            // example: if level is TrackingLevel.CRITICAL (50) and trackingLevel is TrackingLevel.NORMAL (30)
+            // then tracking is enabled for this level
+            if (level >= Instance.trackingLevel)
+            {
+                return true;
+            }
+            return false;
+        }
+
+        public static bool IsTrackFiner()
+        {
+            return CheckTrackingLevel(TrackingLevel.FINER);
+        }
+
+        public static bool IsTrackFine()
+        {
+            return CheckTrackingLevel(TrackingLevel.FINE);
+        }
+
+        public static bool IsTrackNormal()
+        {
+            return CheckTrackingLevel(TrackingLevel.NORMAL);
+        }
+
+        public static bool IsTrackImportant()
+        {
+            return CheckTrackingLevel(TrackingLevel.IMPORTANT);
+        }
+
+        public static bool IsTrackCritical()
+        {
+            return CheckTrackingLevel(TrackingLevel.CRITICAL);
         }
     }
 
