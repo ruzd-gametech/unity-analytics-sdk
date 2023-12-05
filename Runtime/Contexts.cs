@@ -65,6 +65,11 @@ namespace RuzdAnalytics
             DoAdd("playTimeSeconds", playTimeSeconds);
         }
 
+        public string GetRunId()
+        {
+            return (string)this.data["runId"];
+        }
+
         public RunContext SetRunId(string runId)
         {
             this.DoAdd("runId", runId);
