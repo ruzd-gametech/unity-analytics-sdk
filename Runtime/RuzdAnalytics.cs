@@ -587,6 +587,11 @@ namespace RuzdAnalytics
         {
             Instance.session.SetBackground(isBackground);
         }
+
+        public static string GenerateRunId()
+        {
+            return AnalyticsUtils.generateId();
+        }
     }
 
     public class AnalyticsUtils
