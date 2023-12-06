@@ -42,14 +42,15 @@ You need to add the following entry to the list of registries:
 
 ### Initialize
 
-You need to call `RuzdAnalytics.Analytics.Setup` before you can use the SDK.
+You need to call `RuzdAnalytics.Analytics.Configure` before you can use the SDK.
 It should be called only a single time. If you are not sure if your code is the first to call it, you can check with `RuzdAnalytics.Analytics.IsInitialized()`.
 
 ```csharp
+RuzdAnalytics.Analytics.SetLogLevel(1);
 if (!RuzdAnalytics.Analytics.IsInitialized())
 {
-    RuzdAnalytics.Analytics.SetLogLevel(1);
-    RuzdAnalytics.Analytics.Setup("<TRACKING_ENDPOINT>", "<TRACKING_ID>");
+    RuzdAnalytics.Analytics.Configure("<TRACKING_ID>");
+    RuzdAnalytics.Analytics.SetBuildVersion("0.3.1_beta");
 }
 ```
 
